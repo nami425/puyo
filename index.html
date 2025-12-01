@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ぷよぷよ風 全部乗せ＋NEXT2＋先読みAI（スマホボタン対応）</title>
+  <style>
+    /* ---- 全体レイアウト ---- */
+    body {
+      background: #7be0e0;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ゲームパネル外側 */
+    #game-container {
+      background: #5fc4ff;
+      padding: 8px;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+      max-width: 100%;
+      position: relative; /* ← オーバーレイ配置用 */
+    }
+
+    canvas {
+      display: block;
+      border-radius: 14px;
+      max-width: 100%;
+      height: auto;
+      touch-action: none;
+    }
+
+    /* 右側情報パネル */
+    #info {
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 260px;
+      background: rgba(0, 0, 0, 0.60);
+      border-radius: 16px;
+      padding: 10px 14px;
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    }
+
+    .label {
+      color: #9fe1ff;
+      font-weight: 600;
+    }
+
+    button {
+      margin-top: 4px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: #eee;
+      color: #222;
+      font-weight: 600;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    }
+
+    #message {
+      min-height: 1.2em;
+    }
+
+    /* ---- モバイル用ボタン ---- */
+    #mobileControls {
+      margin-top: 10px;
+      display: none; /* PCでは非表示 */
+    }
+    .m-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .mBtn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: #333;
+      color: #fff;
+      font-size: 20px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.6);
+    }
+    .mBtn:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 5px rgba(0,0,0,0.6);
+    }
+
+    @media (max-width: 768px) {
+      #info {
+        max-width: 100%;
+      }
+      #mobileControls {
+        display: block;  /* スマホで表示 */
+      }
+    }
+
+    /* ---- スタート画面 ---- */
+    #startScreen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0,0,0,0.65);
+      z-index: 20;
+    }
+    #startTitle {
+      font-size: 40px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 18px;
+      text-shadow: 0 4px 16px rgba(0,0,0,0.8);
+    }
+    #startButton {
+      padding: 10px 26px;
+      border-radius: 999px;
+      border: none;
+      background: #ffe46b;
+      color: #663300;
+      font-size: 20px;
+      font-weight: 800;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+    #startButton:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    /* ---- READY / GO オーバーレイ ---- */
+    #readyOverlay {
+      position: absolute;
+      inset: 0;
+      display: none;           /* 非表示からスタート */
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 4px 12px rgba(0,0,0,0.9);
+      background: rgba(0,0,0,0.45);
+      z-index: 15;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- 左がフィールド(6*32=192)、右にNEXT用スペース足して272 -->
+    <canvas id="game" width="272" height="384"></canvas>
+
+    <!-- スタート画面 -->
+    <div id="startScreen">
+      <div id="startTitle">ぷよぷよ風</div>
+      <button id="startButton">START</button>
+    </div>
+
+    <!-- READY / GO オーバーレイ -->
+    <div id="readyOverlay"></div>
+
+    <!-- スマホ用ボタン -->
+    <div id="mobileControls">
+      <div class="m-row">
+        <button class="mBtn" id="btnRotateCCW">⟲</button>
+        <button class="mBtn" id="btnRotateCW">⟳</button>
+        <button class="mBtn" id="btnHardDrop">⏬</button>
+      </div>
+      <div class="m-row">
+        <button class="mBtn" id="btnLeft">⬅</button>
+        <button class="mBtn" id="btnSoftDrop">⬇</button>
+        <button class="mBtn" id="btnRight">➡</button>
+      </div>
+      <div class="m-row">
+        <button class="mBtn" id="btnAI">AI</button>
+        <button class="mBtn" id="btnPause">⏸</button>
+        <button class="mBtn" id="btnRestart">↻</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="info">
+    <div><span class="label">操作:</span></div>
+    <ul>
+      <li>← / → : 横移動</li>
+      <li>↑ : 回転（時計回り）</li>
+      <li>Z : 逆回転（反時計回り）</li>
+      <li>↓ : ソフトドロップ</li>
+      <li>Space : ハードドロップ</li>
+      <li>R : リスタート</li>
+      <li>P : 一時停止 / 再開</li>
+      <li>A : AIモード ON/OFF（先読み）</li>
+    </ul>
+    <div><span class="label">状態:</span></div>
+    <div>スコア: <span id="score">0</span></div>
+    <div>連鎖: <span id="chain">0</span></div>
+    <div id="message" style="margin-top:8px;color:#ffb347;"></div>
+    <button id="restart">Restart (R)</button>
+    <button id="pause">Pause (P)</button>
+    <button id="ai-toggle">AI: OFF (A)</button>
+  </div>
+
+  <script>
+
+  // ===== スマホでのダブルタップ拡大を無効化 =====
+  let lastTouchEndTime = 0;
+  document.addEventListener(
+    "touchend",
+    function (e) {
+      const now = Date.now();
+      // 2回目のタップが 300ms 以内なら「ダブルタップ」とみなして拡大を止める
+      if (now - lastTouchEndTime <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEndTime = now;
+    },
+    { passive: false }  // preventDefault するために必須
+  );
+  // ==========================================
+
+    // ==== 基本設定 ====
+    const COLS = 6;
+    const ROWS = 12;
+    const CELL = 32;
+    const FIELD_WIDTH = COLS * CELL;
+    const DROP_INTERVAL = 500;
+    const LOCK_DELAY = 400;
+    const COLORS = ["#ff4b4b", "#4bd3ff", "#ffd84b", "#4bff7a"];
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const scoreEl = document.getElementById("score");
+    const chainEl = document.getElementById("chain");
+    const msgEl   = document.getElementById("message");
+    const restartBtn = document.getElementById("restart");
+    const pauseBtn   = document.getElementById("pause");
+    const aiBtn      = document.getElementById("ai-toggle");
+
+    // スタート画面＆READY/GO
+    const startScreen  = document.getElementById("startScreen");
+    const startButton  = document.getElementById("startButton");
+    const readyOverlay = document.getElementById("readyOverlay");
+
+    // モバイルボタン
+    const mLeft      = document.getElementById("btnLeft");
+    const mRight     = document.getElementById("btnRight");
+    const mSoftDrop  = document.getElementById("btnSoftDrop");
+    const mHardDrop  = document.getElementById("btnHardDrop");
+    const mRotCW     = document.getElementById("btnRotateCW");
+    const mRotCCW    = document.getElementById("btnRotateCCW");
+    const mAI        = document.getElementById("btnAI");
+    const mPause     = document.getElementById("btnPause");
+    const mRestart   = document.getElementById("btnRestart");
+
+    let board = [];
+    let currentPiece = null;
+    let nextQueue = [randomColors(), randomColors()];
+
+    let lastDropTime = 0;
+    let gameOver = false;
+    let chainAnimating = false;
+    let paused = true;     // ← 最初は止めておく（スタート画面用）
+
+    let grounded = false;
+    let groundTime = 0;
+
+    let score = 0;
+    let displayScore = 0;
+    let lastChain = 0;
+
+    let blinkingCells = null;
+    let blinkOn = true;
+    let particles = [];
+    let bgHue = 210;
+    let chainBanner = null;
+    let shakeTime = 0;
+    let shakeDuration = 0;
+    let shakeIntensity = 0;
+    let prevFrameTime = 0;
+
+    let aiEnabled = false;
+    let aiPlan = null;
+    let inReadyGo = false;
+
+    // ==== ユーティリティ ====
+    function createEmptyBoard() {
+      board = [];
+      for (let r = 0; r < ROWS; r++) {
+        board.push(new Array(COLS).fill(null));
+      }
+    }
+
+    function randomColors() {
+      return [
+        Math.floor(Math.random() * COLORS.length),
+        Math.floor(Math.random() * COLORS.length)
+      ];
+    }
+
+    // ==== ピース ====
+    function spawnPiece() {
+      const colors = nextQueue.shift();
+      nextQueue.push(randomColors());
+      const piece = {
+        x: 2,
+        y: 0,
+        dir: 0,
+        colors
+      };
+      if (!canExist(piece)) {
+        gameOver = true;
+        msgEl.textContent = "GAME OVER";
+        return null;
+      }
+      return piece;
+    }
+
+    function getPieceCells(piece) {
+      const cells = [];
+      cells.push({ x: piece.x, y: piece.y, colorIndex: piece.colors[0] });
+
+      let dx = 0, dy = 0;
+      switch (piece.dir) {
+        case 0: dy = 1; break;
+        case 1: dx = -1; break;
+        case 2: dy = -1; break;
+        case 3: dx = 1; break;
+      }
+      cells.push({
+        x: piece.x + dx,
+        y: piece.y + dy,
+        colorIndex: piece.colors[1]
+      });
+      return cells;
+    }
+
+    function canExist(piece) {
+      const cells = getPieceCells(piece);
+      for (const c of cells) {
+        if (c.x < 0 || c.x >= COLS || c.y < 0 || c.y >= ROWS) return false;
+        if (board[c.y][c.x] !== null) return false;
+      }
+      return true;
+    }
+
+    function updateGroundedFlag() {
+      if (!currentPiece) {
+        grounded = false;
+        groundTime = 0;
+        return;
+      }
+      const test = { ...currentPiece, y: currentPiece.y + 1 };
+      if (canExist(test)) {
+        grounded = false;
+        groundTime = 0;
+      } else {
+        grounded = true;
+      }
+    }
+
+    function tryMove(dx, dy) {
+      if (gameOver || !currentPiece || chainAnimating || paused) return;
+      const copy = { ...currentPiece };
+      copy.x += dx;
+      copy.y += dy;
+      if (canExist(copy)) {
+        currentPiece = copy;
+        if (dy > 0) {
+          grounded = false;
+          groundTime = 0;
+        } else {
+          updateGroundedFlag();
+        }
+      } else if (dy > 0) {
+        grounded = true;
+      }
+    }
+
+    function tryRotateCW() {
+      if (gameOver || !currentPiece || chainAnimating || paused) return;
+      const copy = { ...currentPiece };
+      copy.dir = (copy.dir + 1) % 4;
+      if (canExist(copy)) {
+        currentPiece = copy;
+        updateGroundedFlag();
+      }
+    }
+
+    function tryRotateCCW() {
+      if (gameOver || !currentPiece || chainAnimating || paused) return;
+      const copy = { ...currentPiece };
+      copy.dir = (copy.dir + 3) % 4;
+      if (canExist(copy)) {
+        currentPiece = copy;
+        updateGroundedFlag();
+      }
+    }
+
+    function hardDrop() {
+      if (gameOver || !currentPiece || chainAnimating || paused) return;
+      let copy = { ...currentPiece };
+      while (true) {
+        const next = { ...copy, y: copy.y + 1 };
+        if (canExist(next)) {
+          copy = next;
+        } else {
+          break;
+        }
+      }
+      currentPiece = copy;
+      lockPiece();
+    }
+
+    function lockPiece() {
+      const cells = getPieceCells(currentPiece);
+      for (const c of cells) {
+        if (c.y >= 0 && c.y < ROWS) {
+          board[c.y][c.x] = { colorIndex: c.colorIndex };
+        }
+      }
+      currentPiece = null;
+      grounded = false;
+      groundTime = 0;
+      aiPlan = null;
+      applyGravity();
+      startChainAnimation();
+    }
+
+    // ==== 連鎖 ====
+    function startChainAnimation() {
+      chainAnimating = true;
+      let totalErased = 0;
+      let chainCount = 0;
+
+      function step() {
+        const groups = findGroups();
+        if (!groups || groups.length === 0) {
+          if (totalErased > 0) {
+            score += totalErased * 10 * chainCount;
+          }
+          lastChain = chainCount;
+          chainEl.textContent = chainCount;
+          chainAnimating = false;
+          blinkingCells = null;
+          blinkOn = true;
+
+          if (!gameOver) {
+            currentPiece = spawnPiece();
+            if (aiEnabled && currentPiece) {
+              planAIForCurrentPiece();
+            }
+          }
+
+          if (!isAllClear(board)) {
+            if (chainCount >= 2) {
+              msgEl.textContent = chainCount + " 連鎖！";
+            } else if (!aiEnabled) {
+              msgEl.textContent = "";
+            }
+          } else {
+            msgEl.textContent = "✨ ALL CLEAR ✨";
+            spawnCustomBanner("ALL CLEAR!!!", 1200);
+            spawnAllClearParticles();
+            addShake(12, 800);
+          }
+          return;
+        }
+
+        const cells = [];
+        for (const g of groups) {
+          for (const p of g) cells.push(p);
+        }
+
+        chainCount++;
+        chainEl.textContent = chainCount;
+        spawnChainBannerFromChain(chainCount);
+
+        blinkCells(cells, () => {
+          eraseCells(cells);
+          totalErased += cells.length;
+          applyGravity();
+          setTimeout(step, 120);
+        });
+      }
+
+      setTimeout(step, 100);
+    }
+
+    function blinkCells(cells, callback) {
+      blinkingCells = cells;
+      blinkOn = true;
+      let count = 0;
+      const interval = setInterval(() => {
+        blinkOn = !blinkOn;
+        count++;
+        if (count >= 6) {
+          clearInterval(interval);
+          blinkingCells = null;
+          blinkOn = true;
+          callback();
+        }
+      }, 80);
+    }
+
+    function eraseCells(cells) {
+      for (const { r, c, colorIndex } of cells) {
+        if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+          if (board[r][c] !== null) {
+            spawnParticles(c, r, colorIndex);
+            board[r][c] = null;
+          }
+        }
+      }
+    }
+
+    function findGroups() {
+      const visited = [];
+      for (let r = 0; r < ROWS; r++) {
+        visited[r] = new Array(COLS).fill(false);
+      }
+
+      const groups = [];
+      const dr = [1, -1, 0, 0];
+      const dc = [0, 0, 1, -1];
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (visited[r][c] || !board[r][c]) continue;
+
+          const colorIndex = board[r][c].colorIndex;
+          const queue = [{ r, c }];
+          const group = [];
+          visited[r][c] = true;
+
+          while (queue.length > 0) {
+            const { r: rr, c: cc } = queue.shift();
+            group.push({ r: rr, c: cc, colorIndex });
+
+            for (let k = 0; k < 4; k++) {
+              const nr = rr + dr[k];
+              const nc = cc + dc[k];
+              if (
+                nr < 0 || nr >= ROWS ||
+                nc < 0 || nc >= COLS ||
+                visited[nr][nc]
+              ) continue;
+              const nb = board[nr][nc];
+              if (nb && nb.colorIndex === colorIndex) {
+                visited[nr][nc] = true;
+                queue.push({ r: nr, c: nc });
+              }
+            }
+          }
+
+          if (group.length >= 4) {
+            groups.push(group);
+          }
+        }
+      }
+      return groups;
+    }
+
+    function applyGravity() {
+      for (let c = 0; c < COLS; c++) {
+        let writeRow = ROWS - 1;
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (board[r][c] !== null) {
+            board[writeRow][c] = board[r][c];
+            if (writeRow !== r) {
+              board[r][c] = null;
+            }
+            writeRow--;
+          }
+        }
+      }
+    }
+
+    // ==== AI用 ====
+    function cloneBoard() {
+      const b = [];
+      for (let r = 0; r < ROWS; r++) {
+        const row = [];
+        for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          row.push(cell ? { colorIndex: cell.colorIndex } : null);
+        }
+        b.push(row);
+      }
+      return b;
+    }
+
+    function canExistOnBoard(piece, b) {
+      const cells = getPieceCells(piece);
+      for (const c of cells) {
+        if (c.x < 0 || c.x >= COLS || c.y < 0 || c.y >= ROWS) return false;
+        if (b[c.y][c.x] !== null) return false;
+      }
+      return true;
+    }
+
+    function applyGravityOnBoard(b) {
+      for (let c = 0; c < COLS; c++) {
+        let writeRow = ROWS - 1;
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (b[r][c] !== null) {
+            b[writeRow][c] = b[r][c];
+            if (writeRow !== r) {
+              b[r][c] = null;
+            }
+            writeRow--;
+          }
+        }
+      }
+    }
+
+    function isAllClear(b) {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (b[r][c] !== null) return false;
+        }
+      }
+      return true;
+    }
+
+    function evaluateBoard(b) {
+      const visited = [];
+      for (let r = 0; r < ROWS; r++) {
+        visited[r] = new Array(COLS).fill(false);
+      }
+
+      let chainPotential = 0;
+      let clusterScore = 0;
+
+      const dr = [1, -1, 0, 0];
+      const dc = [0, 0, 1, -1];
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (visited[r][c] || !b[r][c]) continue;
+
+          const colorIndex = b[r][c].colorIndex;
+          const queue = [{ r, c }];
+          const group = [];
+          visited[r][c] = true;
+
+          while (queue.length > 0) {
+            const { r: rr, c: cc } = queue.shift();
+            group.push({ r: rr, c: cc });
+
+            for (let k = 0; k < 4; k++) {
+              const nr = rr + dr[k];
+              const nc = cc + dc[k];
+              if (
+                nr < 0 || nr >= ROWS ||
+                nc < 0 || nc >= COLS ||
+                visited[nr][nc]
+              ) continue;
+              const nb = b[nr][nc];
+              if (nb && nb.colorIndex === colorIndex) {
+                visited[nr][nc] = true;
+                queue.push({ r: nr, c: nc });
+              }
+            }
+          }
+
+          if (group.length >= 4) {
+            chainPotential += 600;
+          } else {
+            clusterScore += group.length * group.length * 2;
+          }
+        }
+      }
+
+      let maxHeight = 0;
+      for (let c = 0; c < COLS; c++) {
+        let h = 0;
+        for (let r = 0; r < ROWS; r++) {
+          if (b[r][c]) h++;
+        }
+        if (h > maxHeight) maxHeight = h;
+      }
+
+      let val = chainPotential + clusterScore - maxHeight * 10;
+      if (isAllClear(b)) val += 10000;
+      return val;
+    }
+
+    function simulateBestForColors(b, colors) {
+      let best = -Infinity;
+      for (let dir = 0; dir < 4; dir++) {
+        for (let x = 0; x < COLS; x++) {
+          let p = { x, y: 0, dir, colors };
+          if (!canExistOnBoard(p, b)) continue;
+          while (true) {
+            const next = { ...p, y: p.y + 1 };
+            if (canExistOnBoard(next, b)) {
+              p = next;
+            } else break;
+          }
+          const bb = [];
+          for (let r = 0; r < ROWS; r++) {
+            bb[r] = [];
+            for (let c = 0; c < COLS; c++) {
+              const cell = b[r][c];
+              bb[r][c] = cell ? { colorIndex: cell.colorIndex } : null;
+            }
+          }
+          const pcs = getPieceCells(p);
+          for (const c of pcs) {
+            if (c.y >= 0 && c.y < ROWS) {
+              bb[c.y][c.x] = { colorIndex: c.colorIndex };
+            }
+          }
+          applyGravityOnBoard(bb);
+          const v = evaluateBoard(bb);
+          if (v > best) best = v;
+        }
+      }
+      if (best === -Infinity) return evaluateBoard(b);
+      return best;
+    }
+
+    function planAIForCurrentPiece() {
+      if (!currentPiece) return;
+      const colors = [...currentPiece.colors];
+      let bestScore = -Infinity;
+      let best = null;
+
+      for (let dir = 0; dir < 4; dir++) {
+        for (let x = 0; x < COLS; x++) {
+          const b = cloneBoard();
+          let p = { x, y: 0, dir, colors };
+          if (!canExistOnBoard(p, b)) continue;
+
+          while (true) {
+            const next = { ...p, y: p.y + 1 };
+            if (canExistOnBoard(next, b)) {
+              p = next;
+            } else break;
+          }
+
+          const pcs = getPieceCells(p);
+          for (const c of pcs) {
+            if (c.y >= 0 && c.y < ROWS) {
+              b[c.y][c.x] = { colorIndex: c.colorIndex };
+            }
+          }
+          applyGravityOnBoard(b);
+
+          const evalNow  = evaluateBoard(b);
+          const evalN1   = simulateBestForColors(b, nextQueue[0]);
+          const evalN2   = simulateBestForColors(b, nextQueue[1]);
+
+          const scoreEval = evalNow * 0.2 + evalN1 * 0.7 + evalN2 * 0.4;
+
+          if (scoreEval > bestScore) {
+            bestScore = scoreEval;
+            best = { targetX: x, targetDir: dir };
+          }
+        }
+      }
+      aiPlan = best;
+    }
+
+    function updateAI(dt) {
+      if (!aiEnabled || gameOver || chainAnimating || paused) return;
+      if (!currentPiece || !aiPlan) return;
+
+      if (currentPiece.dir !== aiPlan.targetDir) {
+        const diff = (aiPlan.targetDir - currentPiece.dir + 4) % 4;
+        if (diff === 1) {
+          tryRotateCW();
+        } else if (diff === 3) {
+          tryRotateCCW();
+        } else {
+          tryRotateCW();
+        }
+        return;
+      }
+
+      if (currentPiece.x < aiPlan.targetX) {
+        tryMove(1, 0);
+        return;
+      } else if (currentPiece.x > aiPlan.targetX) {
+        tryMove(-1, 0);
+        return;
+      }
+
+      hardDrop();
+      aiPlan = null;
+    }
+
+    // ==== 演出 ====
+    function isBlinkingCell(r, c) {
+      if (!blinkingCells) return false;
+      for (const p of blinkingCells) {
+        if (p.r === r && p.c === c) return true;
+      }
+      return false;
+    }
+
+    function spawnParticles(col, row, colorIndex) {
+      const baseX = col * CELL + CELL / 2;
+      const baseY = row * CELL + CELL / 2;
+      for (let i = 0; i < 10; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.06 + Math.random() * 0.22;
+        particles.push({
+          x: baseX,
+          y: baseY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 600 + Math.random() * 300,
+          color: COLORS[colorIndex]
+        });
+      }
+      addShake(4, 200);
+    }
+
+    function spawnAllClearParticles() {
+      for (let c = 0; c < COLS; c++) {
+        for (let r = 0; r < ROWS; r++) {
+          spawnParticles(c, r, Math.floor(Math.random() * COLORS.length));
+        }
+      }
+    }
+
+    function spawnChainBannerFromChain(chain) {
+      let label;
+      if (chain === 1) label = "1 CHAIN";
+      else if (chain === 2) label = "2 CHAIN!!";
+      else if (chain === 3) label = "3 CHAIN!!!";
+      else label = chain + " CHAIN!!!!";
+      chainBanner = { text: label, time: 0, duration: 900 };
+      addShake(Math.min(7, 2 + chain * 1.5), 300 + chain * 70);
+    }
+
+    function spawnCustomBanner(text, duration) {
+      chainBanner = { text, time: 0, duration };
+    }
+
+    function addShake(intensity, duration) {
+      shakeIntensity = Math.max(shakeIntensity, intensity);
+      shakeTime      = Math.max(shakeTime, duration);
+      shakeDuration  = Math.max(shakeDuration, duration);
+    }
+
+    // 背景：空〜地面っぽいグラデ
+    function drawBackground() {
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, "#6fbdf5");
+      grad.addColorStop(0.5, "#c8ecff");
+      grad.addColorStop(1, "#f5e9aa");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // フィールド枠：水色＋白の二重枠＆暗いパネル
+    function drawFieldFrameAndGrid() {
+      const h = ROWS * CELL;
+
+      ctx.save();
+
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(0, 0, FIELD_WIDTH, h);
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#4cc4ff";
+      ctx.strokeRect(3, 3, FIELD_WIDTH - 6, h - 6);
+
+      ctx.fillStyle = "rgba(40, 20, 60, 0.9)";
+      ctx.fillRect(4, 4, FIELD_WIDTH - 8, h - 8);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 1;
+      for (let x = 1; x < COLS; x++) {
+        const gx = x * CELL + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(gx, 4);
+        ctx.lineTo(gx, h - 4);
+        ctx.stroke();
+      }
+      for (let y = 1; y < ROWS; y++) {
+        const gy = y * CELL + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(4, gy);
+        ctx.lineTo(FIELD_WIDTH - 4, gy);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    function shadeColor(color, percent) {
+      const num = parseInt(color.slice(1), 16);
+      const r = (num >> 16) + percent;
+      const g = ((num >> 8) & 0x00FF) + percent;
+      const b = (num & 0x0000FF) + percent;
+      const clamp = (v) => Math.max(0, Math.min(255, v));
+      return "#" + (
+        (clamp(r) << 16) |
+        (clamp(g) << 8) |
+        (clamp(b))
+      ).toString(16).padStart(6, "0");
+    }
+
+    function drawPuyoPixel(px, py, colorIndex, scale = 1) {
+      const cx = px + CELL / 2;
+      const cy = py + CELL / 2;
+      const radius = CELL * 0.4 * scale;
+
+      const grad = ctx.createRadialGradient(
+        cx - radius * 0.4, cy - radius * 0.4, radius * 0.2,
+        cx, cy, radius
+      );
+      grad.addColorStop(0, "#fff");
+      grad.addColorStop(0.25, COLORS[colorIndex]);
+      grad.addColorStop(1, shadeColor(COLORS[colorIndex], -25));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx - radius * 0.35, cy - radius * 0.35, radius * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.fill();
+    }
+
+    function drawPuyoGrid(x, y, colorIndex, options = {}) {
+      const px = x * CELL;
+      const py = y * CELL;
+      drawPuyoPixel(px, py, colorIndex, options.scale || 1);
+    }
+
+    function drawGhostPuyo(x, y, colorIndex) {
+      const px = x * CELL;
+      const py = y * CELL;
+      const cx = px + CELL / 2;
+      const cy = py + CELL / 2;
+      const radius = CELL * 0.38;
+
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS[colorIndex];
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawNextArea() {
+      const offsetX = FIELD_WIDTH + 8;
+      ctx.save();
+      ctx.translate(offsetX, 0);
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+      ctx.fillRect(0, 0, 70, 150);
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#4cc4ff";
+      ctx.strokeRect(0.5, 0.5, 69, 149);
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(3, 3, 64, 144);
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 12px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("NEXT", 35, 16);
+
+      drawPuyoPixel(14, 24, nextQueue[0][0], 0.75);
+      drawPuyoPixel(14, 24 + CELL * 0.75, nextQueue[0][1], 0.75);
+
+      ctx.fillText("NEXT2", 35, 88);
+      drawPuyoPixel(14, 96, nextQueue[1][0], 0.75);
+      drawPuyoPixel(14, 96 + CELL * 0.75, nextQueue[1][1], 0.75);
+
+      ctx.restore();
+    }
+
+    function getGhostPiece(piece) {
+      if (!piece) return null;
+      let copy = { ...piece };
+      while (true) {
+        const next = { ...copy, y: copy.y + 1 };
+        if (canExist(next)) {
+          copy = next;
+        } else break;
+      }
+      return copy;
+    }
+
+    function render(dt) {
+      drawBackground();
+
+      let offsetX = 0, offsetY = 0;
+      if (shakeTime > 0 && shakeDuration > 0) {
+        const t = shakeTime / shakeDuration;
+        const currentIntensity = shakeIntensity * t;
+        offsetX = (Math.random() * 2 - 1) * currentIntensity;
+        offsetY = (Math.random() * 2 - 1) * currentIntensity;
+      }
+
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+
+      drawFieldFrameAndGrid();
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          if (!cell) continue;
+          const blinking = isBlinkingCell(r, c);
+          if (blinking && !blinkOn) continue;
+          const scale = blinking ? 1.1 : 1.0;
+          drawPuyoGrid(c, r, cell.colorIndex, { scale });
+        }
+      }
+
+      if (currentPiece && !gameOver && !chainAnimating && !paused) {
+        const ghost = getGhostPiece(currentPiece);
+        const ghostCells = getPieceCells(ghost);
+        for (const c of ghostCells) {
+          if (c.y >= 0 && c.y < ROWS) {
+            drawGhostPuyo(c.x, c.y, c.colorIndex);
+          }
+        }
+      }
+
+      if (currentPiece && !gameOver) {
+        const cells = getPieceCells(currentPiece);
+        for (const c of cells) {
+          if (c.y >= 0 && c.y < ROWS) {
+            drawPuyoGrid(c.x, c.y, c.colorIndex);
+          }
+        }
+      }
+
+      drawNextArea();
+      ctx.restore();
+
+      ctx.save();
+      for (const p of particles) {
+        const alpha = Math.max(0, p.life / 800);
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+      }
+      ctx.restore();
+
+      if (chainBanner) {
+        const t = chainBanner.time / chainBanner.duration;
+        const alpha = t < 0.3 ? t / 0.3 : 1 - Math.max(0, (t - 0.3) / 0.7);
+        const scale = 1 + 0.4 * Math.sin(Math.min(t, 1) * Math.PI);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.translate(FIELD_WIDTH / 2, canvas.height / 3);
+        ctx.scale(scale, scale);
+        ctx.textAlign = "center";
+        ctx.font = "bold 28px system-ui";
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 5;
+        ctx.strokeText(chainBanner.text, 0, 0);
+        ctx.fillText(chainBanner.text, 0, 0);
+        ctx.restore();
+      }
+
+      if (paused && !gameOver && !inReadyGo) {
+        // 通常ポーズ表示（READY/GO中は別オーバーレイ）
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "20px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
+        ctx.restore();
+      }
+
+      scoreEl.textContent = Math.floor(displayScore);
+    }
+
+    function updateParticles(dt) {
+      particles = particles.filter(p => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+        return p.life > 0;
+      });
+    }
+
+    function updateScoreDisplay(dt) {
+      const diff = score - displayScore;
+      if (Math.abs(diff) < 0.1) {
+        displayScore = score;
+      } else {
+        displayScore += diff * Math.min(1, dt / 180);
+      }
+    }
+
+    function updateChainBanner(dt) {
+      if (!chainBanner) return;
+      chainBanner.time += dt;
+      if (chainBanner.time >= chainBanner.duration) {
+        chainBanner = null;
+      }
+    }
+
+    function updateShake(dt) {
+      if (shakeTime > 0) {
+        shakeTime -= dt;
+        if (shakeTime <= 0) {
+          shakeTime = 0;
+          shakeIntensity = 0;
+          shakeDuration = 0;
+        }
+      }
+    }
+
+    // ==== READY→GO 演出＋ゲーム開始 ====
+    function resetGameCore() {
+      createEmptyBoard();
+      score = 0;
+      displayScore = 0;
+      scoreEl.textContent = "0";
+      lastChain = 0;
+      chainEl.textContent = "0";
+      msgEl.textContent = "";
+      gameOver = false;
+      chainAnimating = false;
+      paused = true;
+      pauseBtn.textContent = "Pause (P)";
+      if (mPause) mPause.textContent = "⏸";
+      blinkingCells = null;
+      blinkOn = true;
+      particles = [];
+      chainBanner = null;
+      shakeTime = 0;
+      shakeIntensity = 0;
+      shakeDuration = 0;
+      grounded = false;
+      groundTime = 0;
+      aiPlan = null;
+      nextQueue = [randomColors(), randomColors()];
+      currentPiece = spawnPiece();
+      if (aiEnabled && currentPiece) {
+        planAIForCurrentPiece();
+        msgEl.textContent = "AIモード（先読み）";
+      }
+      lastDropTime = performance.now();
+      prevFrameTime = performance.now();
+    }
+
+    function showReadyGoAndStart() {
+      inReadyGo = true;
+      paused = true;
+      readyOverlay.style.display = "flex";
+      readyOverlay.textContent = "READY";
+
+      setTimeout(() => {
+        readyOverlay.textContent = "GO!";
+        setTimeout(() => {
+          readyOverlay.style.display = "none";
+          inReadyGo = false;
+          paused = false;
+          msgEl.textContent = aiEnabled ? "AIモード（先読み）" : "";
+          lastDropTime = performance.now();
+        }, 600);
+      }, 700);
+    }
+
+    function startGame() {
+      startScreen.style.display = "none";  // 初回のみ有効
+      resetGameCore();
+      showReadyGoAndStart();
+    }
+
+    // ==== メインループ ====
+    function loop(timestamp) {
+      if (!prevFrameTime) prevFrameTime = timestamp;
+      const dt = timestamp - prevFrameTime;
+      prevFrameTime = timestamp;
+
+      const deltaDrop = timestamp - lastDropTime;
+      if (!gameOver && !chainAnimating && !paused && currentPiece && deltaDrop > DROP_INTERVAL) {
+        tryMove(0, 1);
+        lastDropTime = timestamp;
+      }
+
+      if (!gameOver && !chainAnimating && !paused && currentPiece && grounded) {
+        groundTime += dt;
+        if (groundTime >= LOCK_DELAY) {
+          lockPiece();
+        }
+      }
+
+      updateAI(dt);
+      updateParticles(dt);
+      updateScoreDisplay(dt);
+      updateChainBanner(dt);
+      updateShake(dt);
+      render(dt);
+      requestAnimationFrame(loop);
+    }
+
+    // ==== 入力（キーボード） ====
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        startGame();  // リスタートもREADY→GO
+        return;
+      }
+      if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        togglePause();
+        return;
+      }
+      if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        toggleAI();
+        return;
+      }
+
+      if (gameOver || chainAnimating || paused || aiEnabled) return;
+
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          tryMove(-1, 0);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          tryMove(1, 0);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          tryMove(0, 1);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          tryRotateCW();
+          break;
+        case "z":
+        case "Z":
+          e.preventDefault();
+          tryRotateCCW();
+          break;
+        case " ":
+          e.preventDefault();
+          hardDrop();
+          break;
+      }
+    });
+
+    // ==== 入力（モバイルボタン） ====
+
+// 手動操作用ボタン（←→↓ 回転 ハードドロップ）
+function bindActionButton(btn, action) {
+  if (!btn) return;
+  const handler = (e) => {
+    // ダブルタップでの拡大を防ぐ
+    e.preventDefault();
+    safeManualAction(action);
+  };
+  // スマホ：touchstart で処理
+  btn.addEventListener("touchstart", handler, { passive: false });
+  // PC からも押せるように click もつけておく
+  btn.addEventListener("click", handler);
+}
+
+bindActionButton(mLeft,     () => tryMove(-1, 0));
+bindActionButton(mRight,    () => tryMove(1, 0));
+bindActionButton(mSoftDrop, () => tryMove(0, 1));
+bindActionButton(mHardDrop, () => hardDrop());
+bindActionButton(mRotCW,    () => tryRotateCW());
+bindActionButton(mRotCCW,   () => tryRotateCCW());
+
+// リスタート / ポーズ / AI 切り替えボタン
+function bindSimpleButton(btn, action) {
+  if (!btn) return;
+  const handler = (e) => {
+    e.preventDefault();
+    action();
+  };
+  btn.addEventListener("touchstart", handler, { passive: false });
+  btn.addEventListener("click", handler);
+}
+
+bindSimpleButton(mRestart, () => startGame());
+bindSimpleButton(mPause,   () => togglePause());
+bindSimpleButton(mAI,      () => toggleAI());
+
+
+    // スタートボタン
+    startButton.addEventListener("click", () => startGame());
+
+    // ==== トグル系 ====
+    function togglePause() {
+      if (gameOver || chainAnimating || inReadyGo) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Resume (P)" : "Pause (P)";
+      if (mPause) mPause.textContent = paused ? "▶" : "⏸";
+      if (!aiEnabled) {
+        msgEl.textContent = paused ? "一時停止中" : "";
+      }
+    }
+
+    function toggleAI() {
+      aiEnabled = !aiEnabled;
+      aiBtn.textContent = aiEnabled ? "AI: ON (A)" : "AI: OFF (A)";
+      if (mAI) mAI.style.background = aiEnabled ? "#0a6" : "#333";
+      if (aiEnabled) {
+        msgEl.textContent = "AIモード（先読み）";
+        if (currentPiece && !chainAnimating && !paused) {
+          planAIForCurrentPiece();
+        }
+      } else {
+        if (!paused) msgEl.textContent = "";
+        aiPlan = null;
+      }
+    }
+
+    // ==== 初期化 ====
+    createEmptyBoard();          // 空フィールドだけ用意して
+    requestAnimationFrame(loop); // ループ開始（ゲームはスタート画面のまま）
+  </script>
+</body>
+</html>
